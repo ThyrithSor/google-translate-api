@@ -1,6 +1,6 @@
 var querystring = require('querystring');
 
-var got = require('got');
+var https = require('https');
 var token = require('@vitalets/google-translate-token');
 
 var languages = require('./languages');
@@ -49,69 +49,81 @@ function translate(text, opts, gotopts) {
 
         return url + '?' + querystring.stringify(data);
     }).then(function (url) {
-        return got(url, gotopts).then(function (res) {
-            var result = {
-                text: '',
-                pronunciation: '',
-                from: {
-                    language: {
-                        didYouMean: false,
-                        iso: ''
-                    },
-                    text: {
-                        autoCorrected: false,
-                        value: '',
-                        didYouMean: false
+        console.log(url)
+        return new Promise((response, reject) => {
+            https.get(url, (resp) => {
+                let data = '';
+
+                // A chunk of data has been received.
+                resp.on('data', (chunk) => {
+                data += chunk;
+                });
+
+                resp.on('end', () => {
+                    var result = {
+                        text: '',
+                        pronunciation: '',
+                        from: {
+                            language: {
+                                didYouMean: false,
+                                iso: ''
+                            },
+                            text: {
+                                autoCorrected: false,
+                                value: '',
+                                didYouMean: false
+                            }
+                        },
+                        raw: ''
+                    };
+
+                    if (opts.raw) {
+                        result.raw = data;
                     }
-                },
-                raw: ''
-            };
 
-            if (opts.raw) {
-                result.raw = res.body;
-            }
+                    var body = JSON.parse(data);
+                    body[0].forEach(function (obj) {
+                        if (obj[0]) {
+                            result.text += obj[0];
+                        }
+                        if (obj[2]) {
+                            result.pronunciation += obj[2];
+                        }
+                    });
 
-            var body = JSON.parse(res.body);
-            body[0].forEach(function (obj) {
-                if (obj[0]) {
-                    result.text += obj[0];
-                }
-                if (obj[2]) {
-                    result.pronunciation += obj[2];
-                }
-            });
+                    if (body[2] === body[8][0][0]) {
+                        result.from.language.iso = body[2];
+                    } else {
+                        result.from.language.didYouMean = true;
+                        result.from.language.iso = body[8][0][0];
+                    }
 
-            if (body[2] === body[8][0][0]) {
-                result.from.language.iso = body[2];
-            } else {
-                result.from.language.didYouMean = true;
-                result.from.language.iso = body[8][0][0];
-            }
+                    if (body[7] && body[7][0]) {
+                        var str = body[7][0];
 
-            if (body[7] && body[7][0]) {
-                var str = body[7][0];
+                        str = str.replace(/<b><i>/g, '[');
+                        str = str.replace(/<\/i><\/b>/g, ']');
 
-                str = str.replace(/<b><i>/g, '[');
-                str = str.replace(/<\/i><\/b>/g, ']');
+                        result.from.text.value = str;
 
-                result.from.text.value = str;
+                        if (body[7][5] === true) {
+                            result.from.text.autoCorrected = true;
+                        } else {
+                            result.from.text.didYouMean = true;
+                        }
+                    }
 
-                if (body[7][5] === true) {
-                    result.from.text.autoCorrected = true;
+                    response(result);
+                });
+            }).on('error', (err) => {
+                err.message += `\nUrl: ${url}`
+                if (err.statusCode !== undefined && err.statusCode !== 200) {
+                    err.code = 'BAD_REQUEST'
                 } else {
-                    result.from.text.didYouMean = true;
+                    err.code = 'BAD_NETWORK'
                 }
-            }
-
-            return result;
-        }).catch(function (err) {
-            err.message += `\nUrl: ${url}`;
-            if (err.statusCode !== undefined && err.statusCode !== 200) {
-                err.code = 'BAD_REQUEST';
-            } else {
-                err.code = 'BAD_NETWORK';
-            }
-            throw err;
+                reject(err);
+            });
         });
     });
 }
