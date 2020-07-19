@@ -5,9 +5,8 @@ var token = require('@vitalets/google-translate-token');
 
 var languages = require('./languages');
 
-function translate(text, opts, gotopts) {
+function translate(text, opts) {
     opts = opts || {};
-    gotopts = gotopts || {};
     var e;
     [opts.from, opts.to].forEach(function (lang) {
         if (lang && !languages.isSupported(lang)) {
